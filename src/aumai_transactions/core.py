@@ -240,14 +240,20 @@ class TransactionManager:
         return compensated
 
     def _set_state(self, tx: Transaction, state: TransactionState) -> None:
-        """Update the transaction state in the registry.
+        """Update the transaction state in-place and persist the change in the registry.
 
-        We mutate *tx.state* directly (Pydantic v2 models are mutable by default)
-        so that callers holding a reference to *tx* observe the new state, and we
-        also store an updated copy in the registry.
+        Pydantic v2 models are mutable by default, so we assign directly to
+        ``tx.state``.  All callers hold a reference to the same ``tx`` object
+        and therefore observe the updated state immediately.  The registry is
+        updated to point at that same object so that lookups via
+        :meth:`get_transaction` are also consistent.
+
+        Choosing in-place mutation as the single pattern avoids the footgun of
+        returning a stale copy to the caller while storing a different copy in
+        the registry.
         """
         tx.state = state  # type: ignore[assignment]
-        self._transactions[tx.transaction_id] = tx.model_copy(update={"state": state})
+        self._transactions[tx.transaction_id] = tx
 
     def _is_timed_out(self, tx: Transaction) -> bool:
         """Return True if the transaction has exceeded its timeout."""
